@@ -21,3 +21,13 @@ Fictional activities, circles, categories, personalization preferences, and trus
 ## A family product without a child-oriented aesthetic
 
 Village serves adults making decisions for their families. A restrained botanical palette, editorial display type, quiet surfaces, and abstract activity artwork communicate warmth and care without cartoon characters, nursery colors, or daycare-style decoration. The result should feel welcoming to parents without assuming a gender or talking down to the people using it.
+
+## Relational model decisions
+
+Status: Accepted · 2026-10-02
+
+- **Activity and ActivitySession are separate.** Activity stores reusable description, audience, organizer, category, age guidance, and default price. ActivitySession stores a dated occurrence, its venue override, capacity, price override, and status. This lets one listing have multiple scheduled dates without repeating its descriptive data.
+- **Child age uses birth month and year only.** Both fields are optional and must be present together. Month-level age is enough for broad activity suitability while avoiding collection of a full date of birth for young children.
+- **Parent coordinates are not persisted.** The MVP stores a parent’s optional city and area for coarse local context. Precise home coordinates create unnecessary sensitivity; location-based discovery can use venue coordinates and, if needed later, a transient user-provided search origin.
+- **PostGIS is deferred.** The MVP can support an initial nearby search with venue latitude/longitude and application-side distance calculations. A spatial extension should be introduced when measured query needs justify the added database and deployment complexity.
+- **One Booking represents one participant/place.** A booking belongs to one parent and may reference one of that parent’s children, or no child for a parent activity. Capacity is counted by booking rows. Multi-participant reservations and a BookingChild join model are outside the MVP.

@@ -28,6 +28,7 @@ npm test             # Run Vitest
 npm run test:e2e     # Run Playwright browser tests
 npm run db:generate  # Generate Prisma Client after schema changes
 npm run db:migrate   # Apply development migrations
+npm run db:seed      # Add fictional local development fixtures (requires a migrated PostgreSQL database)
 ```
 
 Vitest and Playwright are configured but no product tests have been added yet. Playwright's browser binaries can be installed with `npx playwright install` when browser tests are introduced.
@@ -38,7 +39,7 @@ Vitest and Playwright are configured but no product tests have been added yet. P
 - `src/components/` is organized by product domain; shared landing-page components live in `shared/` and reusable shadcn/ui primitives belong in `ui/`.
 - `src/lib/` holds framework-independent services and domain logic. Its database, authentication, validation, AI, recommendations, and geolocation areas are reserved for future implementation.
 - `src/lib/landing-page-data.ts` contains the typed fictional examples used by the public landing page, separate from its presentation components.
-- `prisma/` contains the PostgreSQL Prisma schema and migrations. The schema intentionally has no models yet.
+- `prisma/` contains the PostgreSQL Prisma schema, SQL migrations, and an idempotent fictional development seed. The seed uses only `example.test` addresses and demo-labeled venues/organizations; apply migrations to a local database before running it.
 - `docs/` records architecture and technical decisions.
 - `e2e/` is the Playwright test location; Vitest tests belong beside source files as `*.test.ts` or `*.test.tsx`.
 

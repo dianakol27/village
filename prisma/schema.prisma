@@ -6,3 +6,365 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+
+enum UserRole {
+  USER
+  ORGANIZER
+  ADMIN
+}
+
+enum OnboardingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum InterestScope {
+  CHILD
+  PARENT
+  BOTH
+}
+
+enum OrganizerVerificationStatus {
+  UNVERIFIED
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum ActivityAudience {
+  CHILDREN
+  PARENTS
+  FAMILIES
+}
+
+enum ActivityStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum ActivitySessionStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+}
+
+enum CircleVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum CircleMembershipRole {
+  MEMBER
+  MODERATOR
+  OWNER
+}
+
+enum MeetupStatus {
+  SCHEDULED
+  CANCELLED
+  COMPLETED
+}
+
+enum MeetupRsvpStatus {
+  GOING
+  WAITLISTED
+  CANCELLED
+}
+
+model User {
+  id               String           @id @default(cuid())
+  email            String           @unique
+  displayName      String?
+  avatarUrl        String?
+  role             UserRole         @default(USER)
+  onboardingStatus OnboardingStatus @default(NOT_STARTED)
+  homeCity         String?
+  homeArea         String?
+  createdAt        DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime         @updatedAt @db.Timestamptz(3)
+
+  children          Child[]
+  interests         UserInterest[]
+  createdOrganizers Organizer[]        @relation("OrganizerCreator")
+  savedActivities   SavedActivity[]
+  bookings          Booking[]
+  circleMemberships CircleMembership[]
+  createdCircles    Circle[]           @relation("CircleCreator")
+  createdMeetups    Meetup[]           @relation("MeetupCreator")
+  meetupRsvps       MeetupAttendee[]
+
+  @@index([homeCity])
+}
+
+model Child {
+  id         String   @id @default(cuid())
+  userId     String
+  nickname   String?
+  birthYear  Int?
+  birthMonth Int?
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interests ChildInterest[]
+  bookings  Booking[]
+
+  // The composite key allows Booking to enforce that a child belongs to its parent.
+  @@unique([id, userId])
+  @@index([userId])
+}
+
+model Interest {
+  id    String        @id @default(cuid())
+  name  String
+  slug  String        @unique
+  scope InterestScope @default(BOTH)
+
+  users      UserInterest[]
+  children   ChildInterest[]
+  activities ActivityInterest[]
+}
+
+model UserInterest {
+  userId     String
+  interestId String
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interest Interest @relation(fields: [interestId], references: [id], onDelete: Cascade)
+
+  @@id([userId, interestId])
+  @@index([interestId, userId])
+}
+
+model ChildInterest {
+  childId    String
+  interestId String
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  child    Child    @relation(fields: [childId], references: [id], onDelete: Cascade)
+  interest Interest @relation(fields: [interestId], references: [id], onDelete: Cascade)
+
+  @@id([childId, interestId])
+  @@index([interestId, childId])
+}
+
+model ActivityCategory {
+  id   String @id @default(cuid())
+  name String
+  slug String @unique
+
+  activities Activity[]
+}
+
+model Organizer {
+  id                 String                      @id @default(cuid())
+  name               String
+  description        String?
+  websiteUrl         String?
+  publicContactEmail String?
+  verificationStatus OrganizerVerificationStatus @default(UNVERIFIED)
+  createdByUserId    String?
+  createdAt          DateTime                    @default(now()) @db.Timestamptz(3)
+  updatedAt          DateTime                    @updatedAt @db.Timestamptz(3)
+
+  createdBy  User?      @relation("OrganizerCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  activities Activity[]
+
+  @@index([createdByUserId])
+}
+
+model Venue {
+  id           String   @id @default(cuid())
+  name         String
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  postalCode   String?
+  countryCode  String   @db.Char(2)
+  latitude     Decimal  @db.Decimal(8, 5)
+  longitude    Decimal  @db.Decimal(8, 5)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  activities Activity[]
+  sessions   ActivitySession[]
+  meetups    Meetup[]
+
+  @@index([city, latitude, longitude])
+}
+
+model Activity {
+  id              String           @id @default(cuid())
+  organizerId     String
+  categoryId      String
+  venueId         String?
+  title           String
+  description     String
+  audience        ActivityAudience
+  childrenWelcome Boolean          @default(true)
+  minAgeMonths    Int?
+  maxAgeMonths    Int?
+  priceMinorUnits Int?
+  currencyCode    String           @default("EUR") @db.Char(3)
+  timeZone        String
+  status          ActivityStatus   @default(DRAFT)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
+
+  organizer Organizer          @relation(fields: [organizerId], references: [id], onDelete: Restrict)
+  category  ActivityCategory   @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  venue     Venue?             @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  interests ActivityInterest[]
+  sessions  ActivitySession[]
+  saves     SavedActivity[]
+
+  @@index([status, categoryId, audience])
+  @@index([organizerId, status])
+  @@index([status, audience, minAgeMonths, maxAgeMonths])
+  @@index([venueId])
+}
+
+model ActivityInterest {
+  activityId String
+  interestId String
+
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  interest Interest @relation(fields: [interestId], references: [id], onDelete: Cascade)
+
+  @@id([activityId, interestId])
+  @@index([interestId, activityId])
+}
+
+model ActivitySession {
+  id                      String                @id @default(cuid())
+  activityId              String
+  venueId                 String?
+  startsAt                DateTime              @db.Timestamptz(3)
+  endsAt                  DateTime              @db.Timestamptz(3)
+  capacity                Int?
+  priceMinorUnitsOverride Int?
+  status                  ActivitySessionStatus @default(SCHEDULED)
+  cancelledAt             DateTime?             @db.Timestamptz(3)
+  createdAt               DateTime              @default(now()) @db.Timestamptz(3)
+  updatedAt               DateTime              @updatedAt @db.Timestamptz(3)
+
+  activity Activity  @relation(fields: [activityId], references: [id], onDelete: Restrict)
+  venue    Venue?    @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  bookings Booking[]
+
+  @@index([status, startsAt])
+  @@index([activityId, startsAt])
+  @@index([venueId, startsAt])
+}
+
+model SavedActivity {
+  userId     String
+  activityId String
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activity Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+
+  @@id([userId, activityId])
+  @@index([activityId, createdAt])
+}
+
+model Booking {
+  id        String        @id @default(cuid())
+  sessionId String
+  userId    String
+  childId   String?
+  status    BookingStatus @default(PENDING)
+  expiresAt DateTime?     @db.Timestamptz(3)
+  createdAt DateTime      @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime      @updatedAt @db.Timestamptz(3)
+
+  session ActivitySession @relation(fields: [sessionId], references: [id], onDelete: Restrict)
+  user    User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  child   Child?          @relation(fields: [childId, userId], references: [id, userId], onDelete: Restrict)
+
+  // Partial unique indexes in the SQL migration allow one row per child and one parent row.
+  @@index([sessionId, status])
+  @@index([sessionId, userId])
+  @@index([userId, status, createdAt])
+}
+
+model Circle {
+  id              String           @id @default(cuid())
+  name            String
+  description     String?
+  city            String
+  area            String?
+  visibility      CircleVisibility @default(PUBLIC)
+  createdByUserId String?
+  archivedAt      DateTime?        @db.Timestamptz(3)
+  createdAt       DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime         @updatedAt @db.Timestamptz(3)
+
+  createdBy   User?              @relation("CircleCreator", fields: [createdByUserId], references: [id], onDelete: SetNull)
+  memberships CircleMembership[]
+  meetups     Meetup[]
+
+  @@index([city, visibility, archivedAt])
+  @@index([createdByUserId])
+}
+
+model CircleMembership {
+  circleId String
+  userId   String
+  role     CircleMembershipRole @default(MEMBER)
+  joinedAt DateTime             @default(now()) @db.Timestamptz(3)
+
+  circle Circle @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([circleId, userId])
+  @@index([userId, circleId])
+  @@index([circleId, role])
+}
+
+model Meetup {
+  id            String       @id @default(cuid())
+  circleId      String
+  venueId       String?
+  creatorUserId String?
+  title         String
+  description   String?
+  startsAt      DateTime     @db.Timestamptz(3)
+  endsAt        DateTime?    @db.Timestamptz(3)
+  capacity      Int?
+  status        MeetupStatus @default(SCHEDULED)
+  createdAt     DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime     @updatedAt @db.Timestamptz(3)
+
+  circle    Circle           @relation(fields: [circleId], references: [id], onDelete: Cascade)
+  venue     Venue?           @relation(fields: [venueId], references: [id], onDelete: SetNull)
+  creator   User?            @relation("MeetupCreator", fields: [creatorUserId], references: [id], onDelete: SetNull)
+  attendees MeetupAttendee[]
+
+  @@index([circleId, status, startsAt])
+  @@index([venueId, startsAt])
+}
+
+model MeetupAttendee {
+  meetupId String
+  userId   String
+  status   MeetupRsvpStatus @default(GOING)
+  rsvpAt   DateTime         @default(now()) @db.Timestamptz(3)
+
+  meetup Meetup @relation(fields: [meetupId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([meetupId, userId])
+  @@index([userId, status, rsvpAt])
+  @@index([meetupId, status])
+}

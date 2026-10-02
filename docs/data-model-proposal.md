@@ -1,8 +1,8 @@
 # Village relational data model proposal
 
-**Status:** Design proposal only · 2026-10-02
+**Status:** Approved MVP design · 2026-10-02
 
-This document proposes a first relational model for discovery, family profiles, organizers, bookings, and Circles. It does not change `prisma/schema.prisma`, create a migration, or require a database connection. The Prisma excerpt is a design sketch to review before implementation; PostgreSQL check constraints and deletion policy still need explicit migration decisions.
+This document records the approved first relational model for discovery, family profiles, organizers, bookings, and Circles. The implemented schema is the canonical source for exact model definitions; this document explains the design and its tradeoffs. PostgreSQL check constraints are included in the initial SQL migration because Prisma's schema language cannot declare these checks directly.
 
 ## 1. Entity overview
 
@@ -45,7 +45,7 @@ User * ── * Meetup                 via MeetupAttendee
 
 ## 3. Proposed Prisma models and enums
 
-The following sketch shows the intended relationships and important fields. Scalar naming and referential actions should be reviewed alongside the decisions later in this document before the schema is implemented.
+The live Prisma definitions are in [`prisma/schema.prisma`](../prisma/schema.prisma). They include the models and enums represented in the sections below. `Booking` is one participant/place: it has one parent, an optional child belonging to that parent, and no seat count or multi-child join.
 
 ```prisma
 enum UserRole {
@@ -129,8 +129,6 @@ model User {
   onboardingStatus           OnboardingStatus @default(NOT_STARTED)
   homeCity                   String?
   homeArea                   String?
-  approximateHomeLatitude    Decimal?         @db.Decimal(6, 3)
-  approximateHomeLongitude   Decimal?         @db.Decimal(6, 3)
   createdAt                  DateTime         @default(now()) @db.Timestamptz(3)
   updatedAt                  DateTime         @updatedAt @db.Timestamptz(3)
 
@@ -232,7 +230,7 @@ model Venue {
   addressLine2  String?
   city          String
   postalCode    String?
-  countryCode   String   @default("NL") @db.Char(2)
+  countryCode   String   @db.Char(2)
   latitude      Decimal  @db.Decimal(8, 5)
   longitude     Decimal  @db.Decimal(8, 5)
   createdAt     DateTime @default(now()) @db.Timestamptz(3)
@@ -258,7 +256,7 @@ model Activity {
   maxAgeMonths       Int?
   priceMinorUnits    Int?
   currencyCode       String           @default("EUR") @db.Char(3)
-  timeZone           String           @default("Europe/Amsterdam")
+  timeZone           String
   status             ActivityStatus   @default(DRAFT)
   createdAt          DateTime         @default(now()) @db.Timestamptz(3)
   updatedAt          DateTime         @updatedAt @db.Timestamptz(3)
@@ -326,7 +324,6 @@ model Booking {
   sessionId   String
   userId      String
   childId     String?
-  seatCount   Int           @default(1)
   status      BookingStatus @default(PENDING)
   expiresAt   DateTime?     @db.Timestamptz(3)
   createdAt   DateTime      @default(now()) @db.Timestamptz(3)
@@ -336,8 +333,8 @@ model Booking {
   user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   child       Child?          @relation(fields: [childId, userId], references: [id, userId], onDelete: Restrict)
 
-  // One parent reservation per session; seatCount can represent more than one seat.
-  @@unique([sessionId, userId])
+  // One participant/place per parent and session.
+  @@index([sessionId, userId])
   @@index([sessionId, status])
   @@index([userId, status, createdAt])
 }
@@ -414,15 +411,15 @@ model MeetupAttendee {
 }
 ```
 
-PostgreSQL `CHECK` constraints should also enforce paired coordinates, latitude/longitude bounds (`-90..90` and `-180..180`), paired birth month/year, valid month numbers, non-negative ages/prices/capacities/seats, `minAgeMonths <= maxAgeMonths`, and `endsAt > startsAt`. Prisma schema alone does not express all of these invariants portably; add them in reviewed SQL migrations when implementing the schema.
+The initial SQL migration adds PostgreSQL `CHECK` constraints for paired child birth month/year and valid months; venue latitude/longitude bounds (`-90..90` and `-180..180`); non-negative activity ages and prices; `minAgeMonths <= maxAgeMonths`; non-negative session and meetup capacities; and session/meetup end times after start times. Prisma 7.10's schema language does not express these `CHECK` constraints, so they are kept in migration SQL and documented here. The schema has no parent coordinate columns and Booking has no seat-count column.
 
 ## 4. Important indexes and constraints
 
 - `User.email` is unique. Normalize email consistently in application code before writing; consider PostgreSQL `citext` only if case-insensitive uniqueness must be enforced independently of application normalization.
 - Composite IDs on join models prevent duplicate interest tags, saved activities, memberships, and RSVPs. Reverse indexes support searches starting from an interest, user, or circle rather than only the leftmost side of the composite key.
-- `Booking @@unique([sessionId, userId])` prevents duplicate parent reservations for the same session. It is intentionally one reservation per parent/session; `seatCount` represents requested places. Pending holds need an expiry worker/cleanup path, and capacity checks must run in a transaction with concurrency protection.
+- One Booking row is one participant/place, either one child (linked to the booking parent) or the parent (`childId = null`). PostgreSQL partial unique indexes prevent duplicate reservations for the same child in a session and duplicate parent-only reservations while allowing one parent to reserve places for multiple children. Prisma cannot represent partial indexes, so they are maintained in migration SQL.
 - The composite `Booking(childId, userId) -> Child(id, userId)` relation prevents booking another parent's child. `Child @@unique([id, userId])` exists to support that FK. A child referenced by a booking is restricted from deletion until the booking is cancelled/unlinked.
-- Session indexes support upcoming-session discovery and the session list for one activity. Booking indexes support capacity counts grouped by session/status and a parent's booking history.
+- Session indexes support upcoming-session discovery and the session list for one activity. Booking indexes support counts grouped by session/status and a parent's booking history.
 - The creator index on `Organizer` and `Circle` supports content-management queries scoped to the creating account. Do not add a standalone verification-status index at MVP scale; its small number of values makes it low-selectivity unless moderation volume demonstrates a need.
 - `Activity(status, categoryId, audience)` and its age-oriented index support published listing filters. Range matching on both minimum and maximum age is not perfectly served by a B-tree; begin with these indexes and inspect real PostgreSQL query plans before adding range types or specialized indexes.
 - `Venue(city, latitude, longitude)` supports city-prefiltered bounding-box queries. It is a pragmatic starting point, not a true geospatial index. See the geographic discovery section.
@@ -442,8 +439,8 @@ PostgreSQL `CHECK` constraints should also enforce paired coordinates, latitude/
 
 ### Location and public exposure
 
-- Do not store a parent's street address or house-level coordinate. Store only a city/area and, if the family opts in to distance sorting, a point rounded to a coarse grid (the proposed `Decimal(6,3)` is around 100 m at Village latitudes; a 1 km grid is safer and can be applied before persistence).
-- Never return a parent's approximate home point, child age/interests, private membership list, or private-circle meetup location in public queries.
+- Store only a parent's `homeCity` and optional `homeArea`. Do not persist parent latitude/longitude, a street address, or a house-level point in the MVP.
+- Never return a parent's home city/area, child age/interests, private membership list, or private-Circle meetup location in public queries.
 - A public activity may expose the organizer's event venue and address because that is necessary for local discovery. Private Circle meetups should reveal venue details only to eligible members/attendees; enforce this in application authorization and response shaping, not merely by hiding UI fields.
 - Circle location is city/area only. Do not add Circle latitude/longitude unless a concrete use case justifies the added exposure.
 - Organizer contact fields must be explicitly labeled public or private. This proposal models only a public contact email; private verification/contact workflow data belongs in a separately access-controlled table if needed.
@@ -462,15 +459,15 @@ PostgreSQL `CHECK` constraints should also enforce paired coordinates, latitude/
 
 Recurring classes are represented by creating sessions from the organizer's recurrence schedule. Do not duplicate Activities per date. The MVP can materialize a rolling window of occurrences; it does not need a recurrence-rule table until organizers need self-service recurrence editing. Keep the Activity's IANA `timeZone` so future local recurrence generation is correct through daylight-saving changes, while each occurrence is stored as a concrete `timestamptz` instant.
 
-Remaining capacity is computed as `capacity - sum(seatCount)` for active, non-expired PENDING holds and CONFIRMED bookings. A `null` capacity means unlimited/untracked. Do not persist `remainingCapacity`; it becomes inconsistent when bookings change. A booking flow must atomically check capacity and create/confirm the booking (row lock or serializable transaction). A scheduled worker or lazy query must expire pending holds.
+Remaining capacity is computed as `capacity - count(bookings)` for active, non-expired PENDING holds and CONFIRMED bookings because each Booking is exactly one participant/place. A `null` capacity means unlimited/untracked. Do not persist `remainingCapacity`; it becomes inconsistent when bookings change. A booking flow must atomically check capacity and create/confirm the booking (row lock or serializable transaction). A scheduled worker or lazy query must expire pending holds.
 
 Parent-only listings use `audience = PARENTS` and `childrenWelcome = false`; age bounds are null. Adult activities where children may accompany use `audience = PARENTS`, `childrenWelcome = true`. Child-centered or family activities use `CHILDREN` or `FAMILIES` and age bounds when known. Validate these combinations at the application boundary; consider SQL checks for impossible combinations after product semantics are settled.
 
 ## 7. Geographic discovery in the MVP
 
-Use ordinary PostgreSQL numeric latitude/longitude columns and city. Given the family's optional coarse origin, calculate a latitude/longitude bounding box for the requested radius, query candidate Venues in the same city/box, then compute exact haversine distance and filter/sort the smaller candidate set in application code. Include an appropriate high-latitude longitude adjustment; Dordrecht-centered assumptions should not become global math assumptions.
+Keep venue latitude/longitude as ordinary PostgreSQL numeric columns; do not persist parent coordinates. In the MVP, use the family's city/area for local filtering. If precise radius sorting is needed and the family grants one-time browser geolocation, keep that origin transient for the request, query candidate Venues by a calculated bounding box, then compute exact haversine distance and filter/sort in application code. Do not save or log the transient origin. Include an appropriate high-latitude longitude adjustment; Dordrecht-centered assumptions should not become global math assumptions.
 
-Use the session start index to bound the date/time window, join through the activity's default venue or session override, and apply the venue box. City-only search remains available for people who decline location sharing. Public result cards can show distance bands or rounded distance, never the saved home coordinate. This is sufficient for an MVP-sized dataset; add PostGIS (`geography(Point, 4326)` + GiST) only when measured query volume/latency justifies it.
+Use the session start index to bound the date/time window, join through the activity's default venue or session override, and filter by venue city. An ephemeral geolocation origin can add radius sorting where permitted; city/area search remains available without location permission. Do not store the home point. This is sufficient for an MVP-sized dataset; add PostGIS (`geography(Point, 4326)` + GiST) only when measured query volume/latency justifies spatial database queries.
 
 ## 8. Recommendation and future AI-search support
 
@@ -480,29 +477,28 @@ No recommendation table is warranted initially. Compute relevance from existing 
 - **Interests:** join `ChildInterest` or `UserInterest` to `ActivityInterest`; `Interest.scope` clarifies which profile type an interest applies to.
 - **Category and audience:** use the Activity's category and audience fields; `childrenWelcome` handles adult events where children can accompany.
 - **Date/time:** filter scheduled sessions by `startsAt`, `endsAt`, and session status. The activity timezone is the source for local recurrence generation.
-- **Distance:** resolve the session venue override or activity venue, apply the bounding box and haversine distance.
-- **Price and availability:** resolve `priceMinorUnitsOverride ?? Activity.priceMinorUnits`; `0` is free and `null` is unpriced/unknown. Derive places remaining from capacity and non-cancelled booking rows.
+- **Distance:** resolve the session venue override or activity venue, filter city or (when available for that request) apply a transient-origin bounding box and haversine distance. No parent coordinates are stored.
+- **Price and availability:** resolve `priceMinorUnitsOverride ?? Activity.priceMinorUnits`; `0` is free and `null` is unpriced/unknown. Derive places remaining from capacity and non-cancelled booking rows, counting one place per booking.
 - **Popularity:** aggregate saves and confirmed bookings (and later completed attendance) over a bounded window. Add a cached aggregate only after query cost warrants it.
 
 An LLM should not have credentials or arbitrary SQL access. A server-side tool should turn language into a validated, allowlisted filter object (age months, interest/category IDs, audience, time window, radius, currency/maximum price, and availability requirement), apply authorization and privacy filtering, then query through the application/data-access layer. Return typed results and source fields so recommendations are explainable. Keep model/provider prompts and tool logic outside the schema and database client.
 
 ## 9. Open questions before implementation
 
-1. **Child-age precision and consent:** Is month/year precise enough for age thresholds, and should age be optional? Which retention/deletion rules apply to children's profile data?
-2. **Booking parties:** Is one reservation per parent/session with a `seatCount` sufficient, or must a booking separately identify multiple children and guardians? If multiple child profiles per booking are required, add a `BookingChild` join and revisit duplicate/capacity semantics.
-3. **Pending holds:** How long does a PENDING booking reserve capacity? Is there a payment step later? These choices determine expiration and transition rules.
-4. **Price semantics:** Are price and currency fixed per activity, variable per session, per child, or per family? The sketch allows a session amount override but assumes one currency per activity.
-5. **Organizer accounts:** MVP uses a creator attribution and a coarse `UserRole`; it does not support multiple staff, claims, or delegated publishing. Add `OrganizerMember` only when team workflows are needed; do not treat `User.role = ORGANIZER` alone as proof of access to every organizer.
-6. **Circle lifecycle:** Is `PRIVATE` invite-only or request-to-join? How is the single owner transferred, and should old meetups remain visible after archive/delete?
-7. **Venue disclosure:** Are public activity addresses visible before a booking? Should private meetup venue details be shown to all Circle members or only confirmed attendees?
-8. **Scheduling:** How far ahead should sessions be materialized, and who edits/cancels them? Recurrence editing is intentionally out of scope for the first schema.
-9. **Geography scale:** Which launch countries and currencies are in scope? Start with city + coarse point + bounding-box filtering, and revisit PostGIS only with real performance data.
-10. **Account deletion and legal retention:** If bookings or organizer contacts must be retained, define anonymization, retention windows, and audit access before implementing cascades.
+1. **Child-data retention and consent:** Month/year only is the approved MVP precision; legal review must still define consent and retention rules before real family onboarding.
+2. **Pending holds:** How long does a PENDING one-place booking reserve capacity? Is there a payment step later? These choices determine expiration and transition rules.
+3. **Price semantics:** Are price and currency fixed per activity, variable per session, or per participant? The model allows a session amount override but assumes one currency per activity.
+4. **Organizer accounts:** MVP uses creator attribution and a coarse `UserRole`; it does not support multiple staff, claims, or delegated publishing. Add `OrganizerMember` only when team workflows are needed; do not treat `User.role = ORGANIZER` alone as proof of access to every organizer.
+5. **Circle lifecycle:** Is `PRIVATE` invite-only or request-to-join? How is the single owner transferred, and should old meetups remain visible after archive/delete?
+6. **Venue disclosure:** Are public activity addresses visible before a booking? Should private meetup venue details be shown to all Circle members or only confirmed attendees?
+7. **Scheduling:** How far ahead should sessions be materialized, and who edits/cancels them? Recurrence editing is intentionally out of scope for the first schema.
+8. **Geography scale:** Which launch countries and currencies are in scope? Begin with venue coordinates plus city filtering and transient distance origins; revisit PostGIS only with measured query needs.
+9. **Account deletion and legal retention:** If bookings or organizer contacts must be retained, define anonymization, retention windows, and audit access before changing cascades.
 
 ## 10. Deliberate non-goals
 
 - No `Recommendation` table until recommendations need persistence or offline explanation.
-- No PostGIS, recurrence-rule DSL, address-geocoding provider, payment ledger, child authentication, organizer staff/claim workflow, chat, analytics event lake, or AI-provider fields in this MVP model.
-- No exact parent home addresses or public child profiles.
+- No PostGIS, persisted parent coordinates, recurrence-rule DSL, address-geocoding provider, payment ledger, child authentication, organizer staff/claim workflow, chat, analytics event lake, or AI-provider fields in this MVP model.
+- No exact parent home addresses or public child profiles. Child age remains optional month/year only, and one booking row remains one participant/place.
 
 These boundaries keep the first relational model focused while leaving the major future extension points explicit.
