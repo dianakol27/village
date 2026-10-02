@@ -99,7 +99,7 @@ function DiscoverySection() {
             title="A few lovely things, just around the corner."
             description="Small plans can make a big difference. Here’s a little of what you might find in your neighborhood."
           />
-          <ButtonLink href="#get-started" variant="outline" className="w-fit">
+          <ButtonLink href="/explore" variant="outline" className="w-fit">
             Explore activities <ArrowRight aria-hidden="true" className="size-4" />
           </ButtonLink>
         </div>
@@ -302,7 +302,7 @@ export default function HomePage() {
                 Discover things your kids will love, find time for yourself, and meet parents nearby.
               </p>
               <div className="mt-7 flex flex-col gap-3 sm:flex-row sm:items-center">
-                <ButtonLink href="#discover" className="w-full sm:w-auto">
+                <ButtonLink href="/explore" className="w-full sm:w-auto">
                   Explore activities <ArrowRight aria-hidden="true" className="size-4" />
                 </ButtonLink>
                 <ButtonLink href="#experiences" variant="outline" className="w-full sm:w-auto">
@@ -348,7 +348,7 @@ export default function HomePage() {
                 Start with one small plan. See where it takes you.
               </p>
             </div>
-            <ButtonLink href="#discover" variant="light" className="shrink-0">
+            <ButtonLink href="/explore" variant="light" className="shrink-0">
               Start exploring <ArrowRight aria-hidden="true" className="size-4" />
             </ButtonLink>
           </div>

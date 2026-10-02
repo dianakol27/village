@@ -3,18 +3,28 @@ import { ArrowUpRight, Menu, X } from "lucide-react";
 import { ButtonLink } from "@/components/shared/button-link";
 import { VillageMark } from "@/components/shared/village-mark";
 
-const navigation = [
-  { label: "Explore", href: "#discover" },
+const landingNavigation = [
+  { label: "Explore", href: "/explore" },
   { label: "For Parents", href: "#for-parents" },
   { label: "Circles", href: "#circles" },
   { label: "About", href: "#about" },
 ] as const;
 
-export function SiteHeader() {
+const productNavigation = [
+  { label: "Explore", href: "/explore" },
+  { label: "How Village works", href: "/#experiences" },
+  { label: "Our approach", href: "/#about" },
+] as const;
+
+export function SiteHeader({ product = false }: { product?: boolean }) {
+  const navigation = product ? productNavigation : landingNavigation;
+  const homeHref = product ? "/" : "#top";
+  const exploreHref = product ? "/explore" : "#discover";
+
   return (
     <header className="relative z-20 border-b border-border/70 bg-background">
       <div className="mx-auto flex h-[4.75rem] max-w-7xl items-center justify-between gap-4 px-5 sm:px-8 lg:px-10">
-        <Link href="#top" aria-label="Village home" className="shrink-0 rounded-lg">
+        <Link href={homeHref} aria-label="Village home" className="shrink-0 rounded-lg">
           <VillageMark />
         </Link>
 
@@ -31,20 +41,22 @@ export function SiteHeader() {
         </nav>
 
         <div className="hidden items-center gap-2.5 md:flex">
-          <Link
-            href="#get-started"
-            className="rounded-lg px-3.5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
-          >
-            Log in
-          </Link>
-          <ButtonLink href="#get-started" size="small">
-            Get started <ArrowUpRight aria-hidden="true" className="size-4" />
+          {!product ? (
+            <Link
+              href="#get-started"
+              className="rounded-lg px-3.5 py-2.5 text-sm font-semibold text-foreground transition-colors hover:bg-secondary"
+            >
+              Log in
+            </Link>
+          ) : null}
+          <ButtonLink href={exploreHref} size="small">
+            {product ? "Browse activities" : "Get started"} <ArrowUpRight aria-hidden="true" className="size-4" />
           </ButtonLink>
         </div>
 
         <div className="flex items-center gap-2 md:hidden">
-          <ButtonLink href="#get-started" size="small" className="min-h-10 px-3.5">
-            Get started
+          <ButtonLink href={product ? "/explore" : "#get-started"} size="small" className="min-h-10 px-3.5">
+            {product ? "Explore" : "Get started"}
           </ButtonLink>
           <details className="group relative">
             <summary className="flex size-10 cursor-pointer list-none items-center justify-center rounded-lg border border-border bg-card text-foreground [&::-webkit-details-marker]:hidden">
@@ -67,14 +79,16 @@ export function SiteHeader() {
                   </Link>
                 ))}
               </div>
-              <div className="mt-2 border-t border-border px-1 pt-2">
-                <Link
-                  href="#get-started"
-                  className="block rounded-lg px-3 py-2.5 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground"
-                >
-                  Log in
-                </Link>
-              </div>
+              {!product ? (
+                <div className="mt-2 border-t border-border px-1 pt-2">
+                  <Link
+                    href="#get-started"
+                    className="block rounded-lg px-3 py-2.5 text-sm font-semibold text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  >
+                    Log in
+                  </Link>
+                </div>
+              ) : null}
             </nav>
           </details>
         </div>

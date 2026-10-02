@@ -15,7 +15,7 @@ The App Router layer should translate web requests into application calls and re
 
 ## Module responsibilities
 
-- `lib/database/`: Prisma client lifecycle and persistence access. Schema and model design are intentionally deferred.
+- `lib/database/`: Prisma client lifecycle and persistence access. `prisma.ts` is server-only and owns the adapter-backed Prisma singleton.
 - `lib/auth/`: authentication integration and session boundaries. No provider or auth flow is selected yet.
 - `lib/validation/`: Zod schemas for request and form boundaries.
 - `lib/ai/`: future AI provider integration, isolated from product rules.
@@ -35,4 +35,4 @@ Use `npm run lint` and `npm run typecheck` during development. Add fast unit tes
 
 ## Current scope
 
-The public home page presents the Village identity and future product experiences using local, typed mock data. Its controls link to sections of the page; no discovery, community, account, booking, or personalization flows are wired up. The Prisma schema still has no models, and no authentication, AI, geolocation, or recommendation behavior is implemented.
+The public home page presents the Village identity and future product experiences using local, typed mock data. `/explore` and `/activities/[slug]` read published activities and upcoming sessions from PostgreSQL through the server-only `lib/activities/queries.ts` module. Deterministic URL parsing and age, audience, date, and price rules live in `lib/activities/discovery.ts`. There is no authentication, booking, AI search, map, distance filtering, or Circles product flow yet.

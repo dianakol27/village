@@ -6,7 +6,7 @@ const footerGroups = [
   {
     title: "Product",
     links: [
-      { label: "Explore activities", href: "#discover" },
+      { label: "Explore activities", href: "/explore" },
       { label: "For parents", href: "#for-parents" },
       { label: "How it works", href: "#experiences" },
     ],
@@ -27,13 +27,13 @@ const footerGroups = [
   },
 ] as const;
 
-export function SiteFooter() {
+export function SiteFooter({ product = false }: { product?: boolean }) {
   return (
     <footer id="footer" className="bg-[#243c30] text-background">
       <div className="mx-auto max-w-7xl px-5 pb-7 pt-12 sm:px-8 sm:pt-16 lg:px-10">
         <div className="grid gap-10 border-b border-background/15 pb-10 sm:grid-cols-2 lg:grid-cols-[1.5fr_repeat(3,1fr)] lg:gap-12">
           <div className="max-w-xs">
-            <Link href="#top" aria-label="Village home" className="inline-flex rounded-lg">
+            <Link href={product ? "/" : "#top"} aria-label="Village home" className="inline-flex rounded-lg">
               <VillageMark light />
             </Link>
             <p className="mt-4 text-sm leading-6 text-background/70">
@@ -47,7 +47,7 @@ export function SiteFooter() {
                 {group.links.map((link) => (
                   <li key={link.label}>
                     <Link
-                      href={link.href}
+                      href={product ? (link.href.startsWith("/") ? link.href : `/${link.href}`) : link.href}
                       className="inline-flex items-center gap-1.5 rounded-sm text-sm text-background/70 transition-colors hover:text-background"
                     >
                       {link.label}
