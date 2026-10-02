@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+
+# Next.js output
+.next/
+/out/
+/build/
+
+# Generated Prisma client
+/src/generated/prisma/
+
+# Environment variables
+.env
+.env.*
+!.env.example
+
+# Tests and reports
+/coverage/
+/playwright-report/
+/test-results/
+
+# Local tooling
+.DS_Store
+*.log
+*.tsbuildinfo
+next-env.d.ts
